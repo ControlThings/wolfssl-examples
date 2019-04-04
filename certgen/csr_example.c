@@ -29,19 +29,24 @@
 #include <wolfssl/wolfcrypt/settings.h>
 #include <wolfssl/wolfcrypt/ecc.h>
 #include <wolfssl/wolfcrypt/asn_public.h>
+#include <wolfssl/wolfcrypt/ed25519.h>
 
 #define MAX_TEMP_SIZE 1024
 
 int main(void)
 {
     int ret;
-    ecc_key key;
+    ed25519_key key;
     WC_RNG rng;
     Cert req;
     byte der[MAX_TEMP_SIZE], pem[MAX_TEMP_SIZE];
     int  derSz, pemSz;
+    word32 ed25519_key_sz = 32;
+    byte ed25519_der[ed25519_key_sz+2];
 
-    ret = wc_ecc_init(&key);
+
+
+    ret = wc_ed25519_init(&key);
     if (ret != 0) {
         printf("ECC init key failed: %d\n", ret);
         goto exit;
@@ -53,27 +58,32 @@ int main(void)
         goto exit;
     }
 
-    ret = wc_ecc_make_key_ex(&rng, 32, &key, ECC_SECP256R1);
+    ret = wc_ed25519_make_key(&rng, 32, &key);
     if (ret != 0) {
         printf("ECC make key failed: %d\n", ret);
         goto exit;
     }
 
-    ret = wc_EccKeyToDer(&key, der, sizeof(der));
-    if (ret <= 0) {
-        printf("ECC Key To DER failed: %d\n", ret);
+    ret = wc_ed25519_export_public(&key, ed25519_der+2, &ed25519_key_sz);
+    ed25519_der[0] = 0x30;
+    ed25519_der[1] = 0x2e;
+
+    if (ret != 0) {
+        printf("Export key failed\n: %d\n", ret);
         goto exit;
     }
-    derSz = ret;
+#if 0
+    printf("Exported pubkey %i bytes\n", ed25519_der_sz);
 
     memset(pem, 0, sizeof(pem));
-    ret = wc_DerToPem(der, derSz, pem, sizeof(pem), ECC_PRIVATEKEY_TYPE);
+    ret = wc_DerToPem(der, 34, pem, sizeof(pem), ED25519_TYPE);
     if (ret <= 0) {
         printf("DER to PEM failed: %d\n", ret);
         goto exit;
     }
     pemSz = ret;
     printf("%s (%d)", pem, pemSz);
+#endif
 
     ret = wc_InitCert(&req);
     if (ret != 0) {
@@ -87,31 +97,32 @@ int main(void)
     strncpy(req.subject.unit, "Development", CTC_NAME_SIZE);
     strncpy(req.subject.commonName, "www.wolfssl.com", CTC_NAME_SIZE);
     strncpy(req.subject.email, "info@wolfssl.com", CTC_NAME_SIZE);
-    ret = wc_MakeCertReq(&req, der, sizeof(der), NULL, &key);
+    ret = wc_MakeCertReq_ex(&req, der, sizeof(der), ED25519_TYPE, &key);
     if (ret <= 0) {
         printf("Make Cert Req failed: %d\n", ret);
         goto exit;
     }
     derSz = ret;
 
-    req.sigType = CTC_SHA256wECDSA;
-    ret = wc_SignCert(req.bodySz, req.sigType, der, sizeof(der), NULL, &key, &rng);
+    req.sigType = CTC_ED25519;
+    ret = wc_SignCert_ex(req.bodySz, req.sigType, der, sizeof(der), ED25519_TYPE, &key, &rng);
     if (ret <= 0) {
         printf("Sign Cert failed: %d\n", ret);
         goto exit;
     }
     derSz = ret;
 
+    memset(pem, 0, sizeof(pem));
     ret = wc_DerToPem(der, derSz, pem, sizeof(pem), CERTREQ_TYPE);
     if (ret <= 0) {
         printf("DER to PEM failed: %d\n", ret);
         goto exit;
     }
     pemSz = ret;
-    printf("%s (%d)", pem, pemSz);
+    printf("%s\n", pem);
 
 exit:
-    wc_ecc_free(&key);
+    wc_ed25519_free(&key);
     wc_FreeRng(&rng);
 
     return ret;
